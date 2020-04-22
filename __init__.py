@@ -239,7 +239,7 @@ def get_type_for_function(function):
             "__gmon_start__",
     ]
 
-    if function.name in filtered_funcs:
+    if function.name in filtered_funcs or function.symbol.type != SymbolType.FunctionSymbol:
         return
 
     return parse_func(function)

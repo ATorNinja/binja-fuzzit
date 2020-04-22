@@ -6,7 +6,6 @@ bitsize = 32
 max_len = 512
 
 afl_fuzzer_func  =  "int main(int argc, char *argv[])"
-
 afl_fuzzer_loop = "do"
 afl_fuzzer_loop_end = "while(Size > 0);"
 afl_fuzzer_loop_init = """
@@ -32,8 +31,7 @@ fuzzer_loop_init = afl_fuzzer_loop_init
 fuzzer_loop_load = afl_fuzzer_loop_load
 fuzzer_loop_end = afl_fuzzer_loop_end
 
-template = """
-#include <stdio.h>
+template = """#include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
 #include <string.h>
@@ -59,9 +57,7 @@ void CloseLibrary()
 int LoadLibrary()
 {{
     {libname} = dlopen("{libname}.so", RTLD_NOW|RTLD_GLOBAL);
-
     fprintf(stderr, "%s\\n", dlerror());
-
     printf("loaded {libname} at %p\\n", {libname});
     atexit(CloseLibrary);
     return {libname} != NULL;
@@ -98,7 +94,6 @@ void ResolveSymbols()
     {fuzzer_loop}
     {{
 
-
         if ( Size < sizeof(choice) ) 
         {{
             break;
@@ -115,7 +110,6 @@ void ResolveSymbols()
 
     }}{fuzzer_loop_end}
     
-
     return 0;
 }}
 """
@@ -133,7 +127,7 @@ class Function():
         return "typedef %s(*%s_t)(%s);" % (ret, self._name, ",".join(argument_types))
 
     def resolve(self, libname):
-	return self.dlsym(libname) +" " + self.printer()
+        return self.dlsym(libname) +" " + self.printer()
 
     def dlsym(self, libname):
         return ("%s = (%s_t)dlsym({libname}, \"%s\");" % (self._name, self._name, self._name)).format(libname=libname)
@@ -197,7 +191,6 @@ class Function():
 
         return """
            case {number}:
-
                 {localVars}
                 {function}({args});
                 Data += ({idx});
@@ -240,9 +233,6 @@ def get_type_for_function(function):
             "_fini", 
             "__stack_chk_fail_local", 
             "__stack_chk_fail", 
-            "strcmp", 
-            "strcpy", 
-	    "strlen",
             "__cxa_finalize",
             "deregister_tm_clones",
             "register_tm_clones",
@@ -260,7 +250,8 @@ def get_type_for_function(function):
 
 def get_types(bv):
     types = []
-    for function in bv.functions:
+    functions = [bv.get_function_at(sym.address) for sym in bv.get_symbols_of_type(SymbolType.FunctionSymbol)]
+    for function in functions:
         tmp = get_type_for_function(function)
         
         if not tmp:
@@ -271,24 +262,30 @@ def get_types(bv):
     return types
 
 def write_template(libname, f_types):
-    with open("c:\\Users\\%s\\Desktop\\harness.c" % getpass.getuser(), 'w+') as f:
-        f.write(template.format(
-                libname=libname,
-                max_len=max_len,
-                fuzzer_loop=fuzzer_loop,
-                fuzzer_loop_end=fuzzer_loop_end,
-                fuzzer_loop_init=fuzzer_loop_init,
-                fuzzer_loop_load=fuzzer_loop_load,
-                fuzzer_func=fuzzer_func,
-                typedefs   ="\n".join(map(lambda a: a.typedef(), f_types)), 
-                dlsyms     ="\n    ".join(map(lambda a: a.resolve(libname),   f_types)),
-                globaldefs ="\n".join(map(lambda a: a.globaldef(), f_types)),
-                choices    ="\n".join([a.choice(i) for i, a in enumerate(f_types)]),
-                number = str(len(f_types))))
+    name_field = SaveFileNameField("Save to")
+    if get_form_input([name_field], "Fuzzit"):
+        if name_field.result == '':
+            return
+        with open(name_field.result, 'w+') as f:
+            f.write(template.format(
+                    libname=libname,
+                    max_len=max_len,
+                    fuzzer_loop=fuzzer_loop,
+                    fuzzer_loop_end=fuzzer_loop_end,
+                    fuzzer_loop_init=fuzzer_loop_init,
+                    fuzzer_loop_load=fuzzer_loop_load,
+                    fuzzer_func=fuzzer_func,
+                    typedefs   ="\n".join([a.typedef() for a in f_types]), 
+                    dlsyms     ="\n    ".join([a.resolve(libname) for a in f_types]),
+                    globaldefs ="\n".join([a.globaldef() for a in f_types]),
+                    choices    ="\n".join([a.choice(i) for i, a in enumerate(f_types)]),
+                    number = str(len(f_types))))
+    else:
+        return
 
 
 def create_for_function(bv, func):
-    libname = os.path.basename(bv.file.filename).split(".")[0]
+    libname = os.path.basename(bv.file.original_filename).split(".")[0]
     f_types = [get_type_for_function(func)]
     print(f_types)
     if len(f_types) == 0:
@@ -298,7 +295,7 @@ def create_for_function(bv, func):
     write_template(libname, f_types)
     
 def create(bv):
-    libname = os.path.basename(bv.file.filename).split(".")[0]
+    libname = os.path.basename(bv.file.original_filename).split(".")[0]
     f_types = get_types(bv)
     if len(f_types) == 0:
         print("No usable functions found")
@@ -306,5 +303,5 @@ def create(bv):
 
     write_template(libname, f_types)
    
-PluginCommand.register("Create test harness", "Attempt to create a test harness for exported functions of this shared library", create)
-PluginCommand.register_for_function("Create test harness for function", "Attempt to create a test harness for the selected function", create_for_function)
+PluginCommand.register("Fuzzit\\Create test harness", "Attempt to create a test harness for exported functions of this shared library", create)
+PluginCommand.register_for_function("Fuzzit\\Create test harness for function", "Attempt to create a test harness for the selected function", create_for_function)

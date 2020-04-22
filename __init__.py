@@ -48,15 +48,15 @@ void *{libname} = NULL;
 void CloseLibrary()
 {{
     if({libname}){{
-	    dlclose({libname});
-	    {libname} = NULL;
+        dlclose({libname});
+        {libname} = NULL;
     }}
     return;
 }}
 
 int LoadLibrary()
 {{
-    {libname} = dlopen("{libname}.so", RTLD_NOW|RTLD_GLOBAL);
+    {libname} = dlopen("{lib}", RTLD_NOW|RTLD_GLOBAL);
     fprintf(stderr, "%s\\n", dlerror());
     printf("loaded {libname} at %p\\n", {libname});
     atexit(CloseLibrary);
@@ -93,8 +93,7 @@ void ResolveSymbols()
 
     {fuzzer_loop}
     {{
-
-        if ( Size < sizeof(choice) ) 
+        if (Size < sizeof(choice)) 
         {{
             break;
         }}
@@ -103,18 +102,16 @@ void ResolveSymbols()
         Data += sizeof(choice);
         Size -= sizeof(choice);
 
-        switch(choice % {number}) 
+        switch(choice%{number}) 
         {{
             {choices}
         }}
-
     }}{fuzzer_loop_end}
-    
     return 0;
 }}
 """
 
-class Function():
+class parse_func():
     def __init__(self, function):
         self._name = function.name
         self._type = function.function_type
@@ -171,13 +168,13 @@ class Function():
                 }
                 unsigned int strlen_%s; memcpy(&strlen_%s, Data+(%s), sizeof(int));
                 if(strlen_%s > Size){
-                        //not enough bytes in buffer
-                        return 0;
+                    //not enough bytes in buffer
+                    return 0;
                 }
                 char *tmpbuf_%s = malloc(strlen_%s+1);
                 if(tmpbuf_%s == NULL){
-                        //could not allocate tmpstring
-                        return 0;
+                    //could not allocate tmpstring
+                    return 0;
                 }
                 strncpy(tmpbuf_%s, Data+(%s)+4, strlen_%s);
                 tmpbuf_%s[strlen_%s] = 0;
@@ -190,14 +187,13 @@ class Function():
                 lvaridx += 1
 
         return """
-           case {number}:
+            case {number}:
                 {localVars}
                 {function}({args});
                 Data += ({idx});
                 Size -= ({idx});
                 {frees}
-                break;
-        """.format(idx=" + ".join(idx), localVars=" ".join(localVars), number=number, function=self._name, args=", ".join(args), frees=" ".join(frees))
+                break;""".format(idx=" + ".join(idx), localVars=" ".join(localVars), number=number, function=self._name, args=", ".join(args), frees=" ".join(frees))
 
 def get_c_type_byte_size(c_type):
     mapping = {"long long int":8, "int":4, "unsigned int":4, "void":4, "short":2, "char":1}
@@ -210,7 +206,7 @@ def get_c_type_byte_size(c_type):
 def binja_type_to_c_type(binja_type):
     if len(binja_type.split()) > 1:
         return " ".join( map(binja_type_to_c_type, binja_type.split()))
-    mapping = { "uint64_t":"long long int", "int64_t":"long long int", "int32_t":"int", "uint32_t":"unsigned int", "void":"void", "char":"char", "int16_t":"short int", "const":"const" }
+    mapping = {"uint64_t":"long long int", "int64_t":"long long int", "int32_t":"int", "uint32_t":"unsigned int", "void":"void", "char":"char", "int16_t":"short int", "const":"const" }
 
     has_pointer = ""
     if "*" in binja_type:
@@ -223,7 +219,7 @@ def binja_type_to_c_type(binja_type):
 def convert_function_parameter_types(function_parameters):
     function_types = []
     for parameter in function_parameters:
-        function_types.append( binja_type_to_c_type(str(parameter.type)))
+        function_types.append(binja_type_to_c_type(str(parameter.type)))
     return function_types      
 
 def get_type_for_function(function):
@@ -246,28 +242,27 @@ def get_type_for_function(function):
     if function.name in filtered_funcs:
         return
 
-    return Function(function)
+    return parse_func(function)
 
 def get_types(bv):
     types = []
     functions = [bv.get_function_at(sym.address) for sym in bv.get_symbols_of_type(SymbolType.FunctionSymbol)]
     for function in functions:
         tmp = get_type_for_function(function)
-        
         if not tmp:
             continue
-        
-        types.append( tmp )
-
+        types.append(tmp)
     return types
 
-def write_template(libname, f_types):
+def write_template(lib, f_types):
     name_field = SaveFileNameField("Save to")
     if get_form_input([name_field], "Fuzzit"):
         if name_field.result == '':
             return
         with open(name_field.result, 'w+') as f:
+            libname = lib.split(".so")[0]
             f.write(template.format(
+                    lib = lib,
                     libname=libname,
                     max_len=max_len,
                     fuzzer_loop=fuzzer_loop,
@@ -285,23 +280,20 @@ def write_template(libname, f_types):
 
 
 def create_for_function(bv, func):
-    libname = os.path.basename(bv.file.original_filename).split(".")[0]
-    f_types = [get_type_for_function(func)]
-    print(f_types)
-    if len(f_types) == 0:
+    lib = os.path.basename(bv.file.original_filename)
+    f_type = get_type_for_function(func)
+    if len(f_type) == None:
         print("No usable functions found")
         return
-
-    write_template(libname, f_types)
+    write_template(lib, [f_type])
     
 def create(bv):
-    libname = os.path.basename(bv.file.original_filename).split(".")[0]
+    lib = os.path.basename(bv.file.original_filename)
     f_types = get_types(bv)
     if len(f_types) == 0:
         print("No usable functions found")
         return
-
-    write_template(libname, f_types)
+    write_template(lib, f_types)
    
 PluginCommand.register("Fuzzit\\Create test harness", "Attempt to create a test harness for exported functions of this shared library", create)
 PluginCommand.register_for_function("Fuzzit\\Create test harness for function", "Attempt to create a test harness for the selected function", create_for_function)
